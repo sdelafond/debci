@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -eu
+set -x
 
 usage() {
   cat <<EOF
@@ -15,13 +16,16 @@ Options:
                             started.
   --online                  Puts debci-batch online. New test runs will be
                             started normally.
-
+  --external-sorter <cmd>   Use <cmd> to sort packages instead of builtin "fastest
+                            first"; <cmd> is expected to read the output of "debci
+                            status --all --json" on stdin, and to return a sorted 
+                            list of packages to enqueue (one name per line)
 $@
 EOF
 }
 
 short_options='f'
-long_options='force,offline,online'
+long_options='force,offline,online,external-sorter:'
 
 debci_base_dir=$(readlink -f $(dirname $(readlink -f $0))/..)
 cd $debci_base_dir
@@ -70,8 +74,15 @@ process_all_packages() {
   # tests' isolation restrictions
   debci job declare-queue
 
-  # determine packages which need to be tested and request tests
-  for pkg in $(all_packages_with_fastest_first); do
+  # get sorted list of packages...
+  if [ -z "$external_sorter" ] ; then
+    package_list="$(all_packages_with_fastest_first)"
+  else
+    package_list="$(debci-status --json --all | ${external_sorter})"
+  fi
+
+  # ... then determine those that need to be tested and request tests
+  for pkg in ${package_list} ; do
     if (! already_enqueued $pkg) && needs_processing $pkg; then
       record_enqueued "$pkg"
       debci-enqueue "$pkg"
@@ -157,6 +168,8 @@ record_enqueued() {
 
 # default configuration
 force=''
+external_sorter=''
+dry_run=''
 offline_marker="$debci_data_basedir/offline"
 
 while true; do
@@ -173,6 +186,10 @@ while true; do
     --online)
       rm -f "${offline_marker}"
       exit 0
+      ;;
+    --external-sorter)
+      external_sorter=$1
+      shift
       ;;
     --)
       break
