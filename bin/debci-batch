@@ -20,12 +20,13 @@ Options:
                             first"; <cmd> is expected to read the output of "debci
                             status --all --json" on stdin, and to return a sorted 
                             list of packages to enqueue (one name per line)
+  --dry-run                 Just list packages instead of enqueuing them
 $@
 EOF
 }
 
 short_options='f'
-long_options='force,offline,online,external-sorter:'
+long_options='force,offline,online,external-sorter:,dry-run'
 
 debci_base_dir=$(readlink -f $(dirname $(readlink -f $0))/..)
 cd $debci_base_dir
@@ -84,8 +85,12 @@ process_all_packages() {
   # ... then determine those that need to be tested and request tests
   for pkg in ${package_list} ; do
     if (! already_enqueued $pkg) && needs_processing $pkg; then
-      record_enqueued "$pkg"
-      debci-enqueue "$pkg"
+      if [ -z "$dry_run" ] ; then
+	record_enqueued "$pkg"
+	debci-enqueue "$pkg"
+      else
+	log "I: $pkg would be enqueued"
+      fi
     else
       report_status "$pkg" "skip"
     fi
@@ -178,6 +183,9 @@ while true; do
   case "$arg" in
     -f|--force)
       force="$arg"
+      ;;
+    --dry-run)
+      dry_run=1
       ;;
     --offline)
       touch "${offline_marker}"
