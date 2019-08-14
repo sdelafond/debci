@@ -1,7 +1,6 @@
 #!/bin/sh
 
 set -eu
-set -x
 
 usage() {
   cat <<EOF
@@ -83,13 +82,20 @@ process_all_packages() {
   fi
 
   # ... then determine those that need to be tested and request tests
-  for pkg in ${package_list} ; do
-    if (! already_enqueued $pkg) && needs_processing $pkg; then
+  echo -n "$package_list" | while read pkg priority ; do
+    if [ -n "$priority" ] && [ "$priority" -gt 0 ] ; then
+      # external sorter is explicitely requiring this one
+      force_enqueue=1
+    else
+      force_enqueue=0
+      priority=0
+    fi
+    if [ -n "$force_enqueue" ] || ((! already_enqueued $pkg) && needs_processing $pkg) ; then
       if [ -z "$dry_run" ] ; then
 	record_enqueued "$pkg"
-	debci-enqueue "$pkg"
+	debci-enqueue --priority "$priority" "$pkg"
       else
-	log "I: $pkg would be enqueued"
+	log "I: $pkg would be enqueued with priority $priority"
       fi
     else
       report_status "$pkg" "skip"

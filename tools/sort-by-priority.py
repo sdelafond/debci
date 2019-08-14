@@ -4,21 +4,25 @@
 
 1. read the output of debci status --all --json on stdin
 2. read a bunch of priority+rules from the CLI, for instance:
-     --priority '5="{package}".startswith("r")'
-     --priority '40=re.search(r"kali","{version}")'
+     --priority '2="{package}".startswith("r")'
+     --priority '3=re.search(r"kali","{version}")'
+     --priority '4="{status}"=="fail" and "{previous_status}" in ("unknown","pass")
+     --priority '8=datetime.datetime.now() - datetime.datetime.strptime("{date}", "%Y-%m-%d %H:%M:%S") > datetime.timedelta(days=30)'
      etc
 3. add a 'priority' field to each JSON document, accoding to those
    rules
 4. sort the documents according to that field
-5. on stdout, print the sorted list (package name only
+5. on stdout, print the sorted list (package name only)
 """
 
 
 import argparse
 import json
 import sys
+import traceback
 
 # the following could be used in rules supplied on the CL
+import datetime
 import glob
 import re
 
@@ -26,8 +30,13 @@ import re
 # functions
 def match(status, rule):
     """Eval rule after interpolating it on status dictionary"""
-    return eval(rule.format(**status))
+    try:
+        result = eval(rule.format(**status))
+    except Exception as e:
+        traceback.print_exc() # FIXME: could log to a dedicated file ?
+        result = False
 
+    return result
 
 def generate_priorities_list(cli_priorities):
     """Go from a list of <rule>=<int> (from CLI) to a somewhat easier to
@@ -36,7 +45,11 @@ def generate_priorities_list(cli_priorities):
 
     for p in cli_priorities:
         priority, rule = p.split('=', 1)
-        priorities.append((int(priority),rule))
+        priority = int(priority)
+        if priority < 0 or priority > 10:
+            print("Error: priorities should be between 0 and 10", file=sys.stderr)
+            sys.exit(1)
+        priorities.append((priority, rule))
 
     # sort it so highest priorities come first
     return sorted(priorities, key=lambda x: x[0], reverse=True)
@@ -56,6 +69,8 @@ assigned to all packages that match the associated <rule>.
 Examples:
   --priority '5="{package}".startswith("r")': priority 5 for packages starting with 'r'
   --priority '40=re.search(r"kali","{version}")': priority 40 for packages whose version contains 'kali'
+  --priority '30="{status}"=="fail" and "{previous_status}" in ("unknown","pass")
+  --priority '60=datetime.datetime.now() - datetime.datetime.strptime("{date}", "%Y-%m-%d %H:%M:%S") > datetime.timedelta(days=30)'
 """)
 args = parser.parse_args(sys.argv[1:])
 
@@ -71,7 +86,7 @@ for status in statuses:
     for priority, rule in priorities:
         if match(status, rule):
             status['priority'] = priority
-            # stop processinglowest matching priority wins
+            # stop processing: highest matching priority wins
             break
 
 # sort according to this new 'priority' field
@@ -81,4 +96,4 @@ sorted_statuses = sorted(statuses,
 
 # print the result
 for status in sorted_statuses:
-    print(status['package'])
+    print("{} {}".format(status['package'], status['priority']))
