@@ -83,14 +83,10 @@ process_all_packages() {
 
   # ... then determine those that need to be tested and request tests
   echo -n "$package_list" | while read pkg priority ; do
-    if [ -n "$priority" ] && [ "$priority" -gt 0 ] ; then
-      # external sorter is explicitely requiring this one
-      force_enqueue=1
-    else
-      force_enqueue=0
+    if [ -z "$priority" ] ; then
       priority=0
     fi
-    if [ -n "$force_enqueue" ] || ((! already_enqueued $pkg) && needs_processing $pkg) ; then
+    if (! already_enqueued $pkg) && needs_processing $pkg ; then
       if [ -z "$dry_run" ] ; then
 	record_enqueued "$pkg"
 	debci-enqueue --priority "$priority" "$pkg"
